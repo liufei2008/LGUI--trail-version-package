@@ -1,0 +1,168 @@
+// Copyright 2019-2021 LexLiu. All Rights Reserved.
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Generated/Material.ush"
+#include "/Engine/Private/LocalVertexFactoryCommon.ush"
+
+
+struct FLGUIBasePassInterpolants
+{
+	float4 PixelPosition	: TEXCOORD8; // xyz = world position, w = clip z
+
+#if USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS
+	float3 PixelPositionExcludingWPO	: TEXCOORD9;
+#endif
+};
+
+struct FLGUIBasePassVSToPS
+{
+	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
+	FLGUIBasePassInterpolants BasePassInterpolants;
+	float4 Position : SV_POSITION;
+};
+
+FVertexFactoryInterpolantsVSToPS VertexFactoryGetInterpolantsVSToPS(half4 VertexColor, float2 UV0, float2 UV1, float2 UV2, float2 UV3)
+{
+	FVertexFactoryInterpolantsVSToPS Interpolants;
+
+	// Initialize the whole struct to 0
+	// Really only the last two components of the packed UVs have the opportunity to be uninitialized
+	Interpolants = (FVertexFactoryInterpolantsVSToPS)0;
+
+#if NUM_TEX_COORD_INTERPOLATORS
+	float2 CustomizedUVs[4];
+	CustomizedUVs[0] = UV0;
+	CustomizedUVs[1] = UV1;
+	CustomizedUVs[2] = UV2;
+	CustomizedUVs[3] = UV3;
+	UNROLL
+	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; CoordinateIndex++)
+	{
+		SetUV(Interpolants, CoordinateIndex, CustomizedUVs[CoordinateIndex]);
+	}
+#endif
+
+	//SetTangents(Interpolants, Intermediates.TangentToWorld[0], Intermediates.TangentToWorld[2], Intermediates.TangentToWorldSign);
+#if (COMPILER_GLSL_ES2 || COMPILER_GLSL_ES3_1 || COMPILER_GLSL_ES3_1_EXT)  && !MOBILE_EMULATION
+	VertexColor.rgba = VertexColor.bgra;
+#endif
+	SetColor(Interpolants, VertexColor);
+
+	return Interpolants;
+}
+
+/** Converts from vertex factory specific input to a FMaterialVertexParameters, which is used by vertex shader material inputs. */
+FMaterialVertexParameters GetMaterialVertexParameters(/*FVertexFactoryInput Input, */half4 VertexColor, float3 WorldPosition)
+{
+    FMaterialVertexParameters Result = (FMaterialVertexParameters) 0;
+    Result.WorldPosition = WorldPosition;
+    Result.VertexColor = VertexColor;
+    return Result;
+}
+
+float4 TransformLocalToTranslatedWorld(float3 LocalPosition)
+{
+	float3 RotatedPosition = Primitive.LocalToWorld[0].xyz * LocalPosition.xxx + Primitive.LocalToWorld[1].xyz * LocalPosition.yyy + Primitive.LocalToWorld[2].xyz * LocalPosition.zzz;
+	return float4(RotatedPosition + (Primitive.LocalToWorld[3].xyz + ResolvedView.PreViewTranslation.xyz),1);
+}
+
+void MainVS(
+    in float3 Position : ATTRIBUTE0,
+    in half4 Color : ATTRIBUTE1,
+    in float2 TextureCoord0 : ATTRIBUTE2,
+    in float2 TextureCoord1 : ATTRIBUTE3,
+    in float2 TextureCoord2 : ATTRIBUTE4,
+    in float2 TextureCoord3 : ATTRIBUTE5,
+	out FLGUIBasePassVSToPS Output
+)
+{
+	ResolvedView = ResolveView();
+
+	//float4 WorldPosition = mul(float4(Position, 1.0), GetPrimitiveData(Parameters.PrimitiveId).LocalToWorld);
+    float4 WorldPosition = TransformLocalToTranslatedWorld(Position);
+	//float4 WorldPosition = float4(Position.xyz + ResolvedView.PreViewTranslation.xyz, 1.0);
+
+    FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Color, WorldPosition.xyz);
+    half3 WorldPositionOffset = GetMaterialWorldPositionOffset(VertexParameters);
+    WorldPosition.xyz += WorldPositionOffset;
+
+	Output.Position = mul(WorldPosition, ResolvedView.TranslatedWorldToClip);
+	Output.BasePassInterpolants.PixelPosition = WorldPosition;
+
+#if USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS
+	Output.BasePassInterpolants.PixelPositionExcludingWPO = WorldPosition.xyz;
+#endif
+
+	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Color, TextureCoord0, TextureCoord1, TextureCoord2, TextureCoord3);
+
+	Output.BasePassInterpolants.PixelPosition.w = Output.Position.w;
+
+#if !OUTPUT_MOBILE_HDR && (COMPILER_GLSL_ES2 || COMPILER_GLSL_ES3_1 || COMPILER_GLSL_ES3_1_EXT)
+	Output.Position.y *= -1;
+#endif
+}
+
+
+
+FMaterialPixelParameters GetMaterialPixelParameters(FVertexFactoryInterpolantsVSToPS Interpolants, float4 SvPosition)
+{
+	// GetMaterialPixelParameters is responsible for fully initializing the result
+	FMaterialPixelParameters Result = MakeInitializedMaterialPixelParameters();
+
+#if NUM_TEX_COORD_INTERPOLATORS
+	UNROLL
+	for( int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; CoordinateIndex++ )
+	{
+		Result.TexCoords[CoordinateIndex] = GetUV(Interpolants, CoordinateIndex);
+	}
+#endif
+	Result.VertexColor = GetColor(Interpolants);
+	return Result;
+}
+
+void ApplyPixelDepthOffsetForLGUIBasePass(inout FMaterialPixelParameters MaterialParameters, FPixelMaterialInputs PixelMaterialInputs, out float OutDepth)
+{
+    float PixelDepthOffset = ApplyPixelDepthOffsetToMaterialParameters(MaterialParameters, PixelMaterialInputs, OutDepth);
+}
+
+void MainPS(
+	FVertexFactoryInterpolantsVSToPS Interpolants
+	, FLGUIBasePassInterpolants BasePassInterpolants
+	, in float4 SvPosition : SV_Position
+	OPTIONAL_IsFrontFace
+	, out half4 OutColor	: SV_Target0
+#if OUTPUT_PIXEL_DEPTH_OFFSET
+    , out float OutDepth : SV_Depth
+#endif
+)
+{
+	ResolvedView = ResolveView();
+
+#if (COMPILER_GLSL_ES2 || COMPILER_GLSL_ES3_1 || COMPILER_GLSL_ES3_1_EXT) && OUTPUT_GAMMA_SPACE && !MOBILE_EMULATION
+	// LDR ES2 needs screen vertical flipped
+	SvPosition.y = ResolvedView.BufferSizeAndInvSize.y - SvPosition.y - 1;
+#endif
+
+	FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(Interpolants, SvPosition);
+	FPixelMaterialInputs PixelMaterialInputs;
+	{
+		float4 ScreenPosition = SvPositionToResolvedScreenPosition(SvPosition);
+		float3 WorldPosition = BasePassInterpolants.PixelPosition.xyz;
+		float3 WorldPositionExcludingWPO = BasePassInterpolants.PixelPosition.xyz;
+		#if USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS
+			WorldPositionExcludingWPO = BasePassInterpolants.PixelPositionExcludingWPO;
+		#endif
+		CalcMaterialParametersEx(MaterialParameters, PixelMaterialInputs, SvPosition, ScreenPosition, bIsFrontFace, WorldPosition, WorldPositionExcludingWPO);
+	}
+
+#if OUTPUT_PIXEL_DEPTH_OFFSET
+	ApplyPixelDepthOffsetForLGUIBasePass(MaterialParameters, PixelMaterialInputs, OutDepth);
+#endif
+	
+	OutColor = half4(GetMaterialEmissive(PixelMaterialInputs).rgb, GetMaterialOpacity(PixelMaterialInputs));
+	OutColor.rgb = pow(OutColor.rgb, 0.454545);
+	
+#if MATERIALBLENDING_MASKED
+    clip(GetMaterialMask(PixelMaterialInputs));
+#endif
+}
