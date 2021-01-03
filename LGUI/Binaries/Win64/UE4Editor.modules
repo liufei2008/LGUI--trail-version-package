@@ -1,0 +1,9 @@
+{
+	"BuildId": "10570792",
+	"Modules": 
+	{
+		"LGUI": "UE4Editor-LGUI.dll",
+		"LGUIEditor": "UE4Editor-LGUIEditor.dll",
+		"LTween": "UE4Editor-LTween.dll"
+	}
+}
