@@ -1,14 +1,36 @@
-## 2.10.2
+## 2.11.2
+#### NewFeature:
+Add controller input support.
+Custom mouse position input.
+#### Fix:
+Fix useNativeParameter issue when copy event in LGUIDrawableEvent.
+## 2.11.1
+#### Fix:
+Fix a shader compiler error X3504 caused by LGUIHudShader.usf.
+Fix buildin prefab not loaded in packaged game.
+Fix UITexture's UVRect issue.
+#### NewFeature:
+**Support MultiSampleAntiAliasing!!!(MSAA)** Turn on MSAA in ProjectSettins/LGUI/Renderging/AntiAliasing.
+UIBackgroundBlur and UIBackgroundPixelate now support on mobile.
+## 2.11.0
+#### NewFeature:
+Layout support animation when change item position.
+Add more blueprint functions in UIItem: GetRenderCanvas GetRootCanvas GetCanvasScaler IsScreenSpaceOverlayUI IsRenderTargetUI IsWorldSpaceUI.
+OnPointerEnter/Exit event more reasonable: parent enter/exit will execute only once if pointer enter/exit any child.
+LGUIEventFireType add new enum: OnlyTargetActor.
+Play/Stop mark as UFUNCTION in LGUIPlayTween.
+#### Modify:
+Remove OnPointerDragEnter/Exit interface because it is not needed, we can instead use isDragging and enterComponent from LGUIPointerEventData.
+Rename DeleteActor to DestroyActorWithHierarchy.
+Simplify LGUIPointerInputModule's event handle.
 #### Fix:
 Select canvas on SceneOutliner may change selection.
 UIItem depth info wrong.
 RichText may display "<" if end with symbol.
-#### NewFeature:
-Layout support animation when change item position.
-Add more blueprint functions in UIItem: GetRenderCanvas GetRootCanvas GetCanvasScaler IsScreenSpaceOverlayUI IsRenderTargetUI IsWorldSpaceUI.
-OnPointerEnter/Exit event now support: parent will not 
-LGUIEventFireType add new enum: OnlyTargetActor.
-Play/Stop mark as UFUNCTION in LGUIPlayTween.
+Fix sort issue when use LGUI hierarchy sort.
+Fix bug: delay not working in some LTweenBPLibrary.
+Fix bug: If sprite have none packingTag, then uv get wrong.
+Fix bug: if LTween's duration = 0, then nothing happen.
 ## 2.10.1
 #### Fix:
 Fix bug: UIEventTrigger parameter become (Actor) type.
